@@ -40,10 +40,10 @@ function CDCase({ isGrabbed, onGrabToggle }) {
   const [isOpen, setIsOpen] = useState(false)
   
   const [frontTex, backTex, diskTex, insideTex] = useTexture([
-    '/covers/howhigh/front.jpg', 
-    '/covers/howhigh/back.jpg', 
-    '/covers/howhigh/disk.jpg',
-    '/covers/howhigh/inside.jpg'
+    '/covers/howhigh/frontd.png', 
+    '/covers/howhigh/backd.png', 
+    '/covers/howhigh/diskd.png',
+    '/covers/howhigh/insided.png'
   ])
 
   frontTex.magFilter = THREE.NearestFilter
@@ -59,7 +59,7 @@ function CDCase({ isGrabbed, onGrabToggle }) {
     lidRotation: isOpen ? -Math.PI / 1.5 : 0, 
     cdZ: isGrabbed ? 3.1 : (isOpen ? 0.2 : 0), 
     cdY: isGrabbed ? 0.5 : 0, 
-    cdX: isGrabbed ? 0 : 0, 
+    cdX: isGrabbed ? 0.1 : 0.1, 
     config: { mass: 1, tension: 150, friction: 30 } 
   })
 
@@ -79,7 +79,7 @@ function CDCase({ isGrabbed, onGrabToggle }) {
       </mesh>
 
       <mesh position={[0, 0, 0.001]}>
-        <planeGeometry args={[2.7, 2.3]} />
+        <planeGeometry args={[2.8, 2.4]} />
         <meshStandardMaterial map={insideTex} roughness={0.5} />
       </mesh>
 
@@ -89,6 +89,7 @@ function CDCase({ isGrabbed, onGrabToggle }) {
         position-y={cdY} 
         position-x={cdX} 
         rotation-x={Math.PI / 2}
+        rotation-y={Math.PI / 3}
         onClick={(e) => {
           if (e.delta > 2) return;
           e.stopPropagation(); 
@@ -96,7 +97,7 @@ function CDCase({ isGrabbed, onGrabToggle }) {
         }}
       >
         <cylinderGeometry args={[1.1, 1.1, 0.02, 32]} />
-        <meshStandardMaterial map={diskTex} metalness={0.5} roughness={0.5} />
+        <meshStandardMaterial map={diskTex} metalness={0.7} roughness={0.5} />
       </a.mesh>
 
       <a.group position={[-1.4, 0, 0]} rotation-y={lidRotation} frustumCulled={false}>
