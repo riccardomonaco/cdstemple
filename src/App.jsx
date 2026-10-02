@@ -1,8 +1,40 @@
-import { useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { useState, useRef } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, ContactShadows, useTexture } from '@react-three/drei'
 import { useSpring, a } from '@react-spring/three'
 import * as THREE from 'three'
+
+// --- DEBUG HUD ---
+// Stampa i valori in tempo reale nel div HTML esterno senza triggerare re-render di React
+function DebugHUD({ controlsRef }) {
+  useFrame((state) => {
+    const debugPanel = document.getElementById('debug-panel')
+    if (debugPanel) {
+      const cam = state.camera.position
+      const tar = controlsRef.current ? controlsRef.current.target : { x: 0, y: 0, z: 0 }
+      
+      debugPanel.innerText = 
+        `--- DEBUG R3F ---\n` +
+        `CAMERA : [ ${cam.x.toFixed(2)},  ${cam.y.toFixed(2)},  ${cam.z.toFixed(2)} ]\n` +
+        `TARGET : [ ${tar.x.toFixed(2)},  ${tar.y.toFixed(2)},  ${tar.z.toFixed(2)} ]`
+    }
+  })
+  return null
+}
+
+// --- GESTORE DELLA TELECAMERA ---
+function CameraReset({ isGrabbed, controlsRef }) {
+  useFrame((state) => {
+    if (isGrabbed && controlsRef.current) {
+      // Questi sono i valori verso cui la camera sta cercando di andare.
+      // Potrai modificarli una volta trovati quelli perfetti dal pannello di debug.
+      state.camera.position.lerp(new THREE.Vector3(0, 0, 8.5), 0.1);
+      controlsRef.current.target.lerp(new THREE.Vector3(0, 0, 0), 0.1);
+      controlsRef.current.update();
+    }
+  });
+  return null;
+}
 
 function CDCase({ isGrabbed, onGrabToggle }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -23,27 +55,13 @@ function CDCase({ isGrabbed, onGrabToggle }) {
   diskTex.colorSpace = THREE.SRGBColorSpace
   insideTex.colorSpace = THREE.SRGBColorSpace
 
-  // --- AREA DI TESTING PER IL GRAB ---
-  // Tweakka questi valori (quelli dopo il '?' nella condizione isGrabbed)
   const { lidRotation, cdZ, cdY, cdX } = useSpring({
     lidRotation: isOpen ? -Math.PI / 1.5 : 0, 
-    
-    // cdZ: Muove il CD verso di te (avanti/indietro). 
-    // Valori più alti = più vicino alla telecamera.
-    // Prova ad alzare questo valore (es. 2.5 o 3.0) per far passare il coperchio "dietro" al disco.
-    cdZ: isGrabbed ? 2.5 : (isOpen ? 0.2 : 0), 
-    
-    // cdY: Muove il CD in alto/basso.
-    // 0 = centrato nella scatola. Numeri positivi lo alzano.
-    cdY: isGrabbed ? 0.5 : 0,
-    
-    // cdX: Muove il CD a destra/sinistra.
-    // 0 = perfettamente centrato. Numeri positivi lo spostano a destra, negativi a sinistra.
-    cdX: isGrabbed ? 0 : 0,
-    
+    cdZ: isGrabbed ? 3.1 : (isOpen ? 0.2 : 0), 
+    cdY: isGrabbed ? 0.5 : 0, 
+    cdX: isGrabbed ? 0 : 0, 
     config: { mass: 1, tension: 150, friction: 30 } 
   })
-  // ------------------------------------
 
   return (
     <group 
@@ -93,32 +111,57 @@ function CDCase({ isGrabbed, onGrabToggle }) {
 
 export default function App() {
   const [isCdGrabbed, setIsCdGrabbed] = useState(false)
+  const controlsRef = useRef()
 
   return (
-    <div style={{ width: '100vw', height: '100vh', backgroundColor: '#0f0f13' }}>
-      <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-        
-        <ambientLight intensity={1.5} />
-        <directionalLight position={[10, 10, 5]} intensity={1.5} />
-        <pointLight position={[-10, -10, -10]} intensity={0.5} />
-        
-        <CDCase 
-          isGrabbed={isCdGrabbed}
-          onGrabToggle={() => setIsCdGrabbed(!isCdGrabbed)}
-        />
-        
-        <ContactShadows position={[0, -1.3, 0]} opacity={0.5} scale={10} blur={2} far={4} />
+    <>
+      {/* UI HTML in overlay */}
+      <div 
+        id="debug-panel" 
+        style={{ 
+          position: 'absolute', 
+          top: 10, 
+          right: 10, 
+          color: '#0f0', 
+          backgroundColor: '#000c', 
+          padding: '15px', 
+          fontFamily: 'monospace', 
+          zIndex: 100, 
+          whiteSpace: 'pre-wrap',
+          border: '1px solid #0f0'
+        }}
+      >
+        Caricamento telemetria...
+      </div>
 
-        {/* OrbitControls pulito, senza blocchi forzati esterni che spaccano lo zoom */}
-        <OrbitControls 
-          enablePan={false} 
-          enabled={!isCdGrabbed} // Blocca la rotazione quando il CD è in mano
-          minPolarAngle={Math.PI / 2 - 0.1} 
-          maxPolarAngle={Math.PI / 2 + 0.1} 
-          minDistance={3}
-          maxDistance={8}
-        />
-      </Canvas>
-    </div>
+      <div style={{ width: '100vw', height: '100vh', backgroundColor: '#0f0f13' }}>
+        <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
+          
+          <DebugHUD controlsRef={controlsRef} />
+          <CameraReset isGrabbed={isCdGrabbed} controlsRef={controlsRef} />
+
+          <ambientLight intensity={1.5} />
+          <directionalLight position={[10, 10, 5]} intensity={1.5} />
+          <pointLight position={[-10, -10, -10]} intensity={0.5} />
+          
+          <CDCase 
+            isGrabbed={isCdGrabbed}
+            onGrabToggle={() => setIsCdGrabbed(!isCdGrabbed)}
+          />
+          
+          <ContactShadows position={[0, -1.3, 0]} opacity={0.5} scale={10} blur={2} far={4} />
+
+          <OrbitControls 
+            ref={controlsRef}
+            enablePan={false} 
+            enabled={!isCdGrabbed} 
+            minPolarAngle={Math.PI / 2 - 0.3} 
+            maxPolarAngle={Math.PI / 2 + 0.3} 
+            minDistance={3}
+            maxDistance={10}
+          />
+        </Canvas>
+      </div>
+    </>
   )
 }
