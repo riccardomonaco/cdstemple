@@ -1,0 +1,12 @@
+[
+  {
+    "id": "howhigh", "title": "How High", "artist": "",
+    "textures": { "front": "/covers/howhigh/frontd.png", "back": "/covers/howhigh/backd.png",
+                  "disk": "/covers/howhigh/diskd.png", "inside": "/covers/howhigh/insided.png" },
+    "tracks": [
+      { "title": "Track 1", "src": "/audio/howhigh/01.mp3" },
+      { "title": "Track 2", "src": "/audio/howhigh/02.mp3" },
+      { "title": "Track 3", "src": "/audio/howhigh/03.mp3" }
+    ]
+  }
+]
