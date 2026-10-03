@@ -1,12 +1,28 @@
 [
   {
-    "id": "howhigh", "title": "How High", "artist": "",
-    "textures": { "front": "/covers/howhigh/frontd.png", "back": "/covers/howhigh/backd.png",
-                  "disk": "/covers/howhigh/diskd.png", "inside": "/covers/howhigh/insided.png" },
+    "id": "howhigh",
+    "title": "How High (The Soundtrack)",
+    "artist": "Various Artists",
+    "textures": {
+      "front": "/covers/howhigh/frontd.png",
+      "back": "/covers/howhigh/backd.png",
+      "disk": "/covers/howhigh/diskd.png",
+      "inside": "/covers/howhigh/insided.png"
+    },
     "tracks": [
-      { "title": "Track 1", "src": "/audio/howhigh/01.mp3" },
-      { "title": "Track 2", "src": "/audio/howhigh/02.mp3" },
-      { "title": "Track 3", "src": "/audio/howhigh/03.mp3" }
+      { "title": "Intro (Skit)", "src": "/audio/howhigh/01.m4a" },
+      { "title": "Part II", "src": "/audio/howhigh/02.m4a" },
+      { "title": "Round And Round (Remix)", "src": "/audio/howhigh/03.m4a" },
+      { "title": "Cisco Kid", "src": "/audio/howhigh/04.m4a" },
+      { "title": "America's Most", "src": "/audio/howhigh/05.m4a" },
+      {
+        "title": "Yes Sir, Dean Cain, Sir (Skit)",
+        "src": "/audio/howhigh/06.m4a"
+      },
+      { "title": "Let's Do It", "src": "/audio/howhigh/07.m4a" },
+      { "title": "We Don't No How 2 Act", "src": "/audio/howhigh/08.m4a" },
+      { "title": "Who Wanna Rap", "src": "/audio/howhigh/09.m4a" },
+      { "title": "Fine Line-Saukrates", "src": "/audio/howhigh/10.m4a" }
     ]
   }
 ]
