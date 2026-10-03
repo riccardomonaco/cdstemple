@@ -14,10 +14,9 @@ import { useGameState, useGameDispatch } from "../state/store";
 import { placeOf } from "../state/selectors";
 import type { Album } from "../data/schema";
 
-const NO_RAYCAST = () => {};
-const DEFAULT_RAYCAST = THREE.Mesh.prototype.raycast;
-
 export function CDCase({ album }: { album: Album }) {
+  const NO_RAYCAST = () => {};
+  const DEFAULT_RAYCAST = THREE.Mesh.prototype.raycast;
   const s = useGameState(),
     dispatch = useGameDispatch();
   const [isOpen, setIsOpen] = useState(false);
