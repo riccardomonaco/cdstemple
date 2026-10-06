@@ -15,320 +15,345 @@ import { placeOf } from "../state/selectors";
 import type { Album } from "../data/schema";
 
 const MODEL_URL = "/models/cd_music_02.glb";
-const MODEL_SCALE = 20;
-const MODEL_ROT_X = -Math.PI / 2;
-const GAME_DISC_DIAMETER = 2.2;
 
-// The lid is a book cover: hinge on the LEFT, opening RIGHT -> LEFT.
+// Il GLB contiene 11 custodie: usiamo solo la prima, l'unica con il disco.
+// Le sue coordinate locali sono in millimetri, con X = larghezza,
+// Y = spessore (+Y = lato copertina) e Z = altezza (+Z = basso).
+const CASE_NODE = "CD_CASE.001_6";
+const NODES = {
+  tray: "Object_12", // vassoio nero
+  shell: "Object_14", // base trasparente
+  lid: "Object_16", // coperchio trasparente
+  front: "Object_10", // booklet frontale (solo per le misure)
+  back: "Object_8", // inlay posteriore con le coste (solo per le misure)
+  label: "Object_5", // disco, lato stampato
+  under: "Object_6", // disco, lato argentato
+};
+
+// Millimetri del modello -> unità di scena (custodia larga ~2.8).
+const MM = 0.02;
+// Nel GLB il coperchio è già aperto di 30° attorno a questa cerniera
+// (asse Z locale, misurata confrontandolo con le custodie chiuse del file).
+const HINGE_MM = new THREE.Vector2(-66.85, 4.45);
+const GLB_LID_ANGLE = THREE.MathUtils.degToRad(30);
+// Fondo del vassoio: l'inlay interno va appena sopra, sotto il disco.
+const TRAY_FLOOR_MM = 1.75;
+// Nell'inlay posteriore le coste occupano il 4.5% a sinistra e a destra.
+const SPINE_U = 0.045;
+
+// Apertura a libro: cerniera a sinistra, il coperchio viene verso la camera.
 const LID_OPEN_ANGLE = THREE.MathUtils.degToRad(120);
+
+const NO_RAYCAST = () => {};
 
 const normalizeName = (name: string) =>
   name.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-const findNode = (
-  root: THREE.Object3D,
-  wanted: string,
-): THREE.Object3D | null => {
-  const exact = root.getObjectByName(wanted);
-  if (exact) return exact;
-
+// GLTFLoader ripulisce i nomi ("CD_CASE.001_6" -> "CD_CASE001_6"): confronto normalizzato.
+const findMesh = (root: THREE.Object3D, wanted: string) => {
   const target = normalizeName(wanted);
-  let result: THREE.Object3D | null = null;
-  root.traverse((object) => {
-    if (!result && normalizeName(object.name) === target) result = object;
+  let found: THREE.Object3D | undefined;
+  root.traverse((o) => {
+    if (!found && normalizeName(o.name) === target) found = o;
   });
-  return result;
+  if (!found) throw new Error(`Nodo "${wanted}" non trovato in ${MODEL_URL}`);
+  return found;
 };
 
-const findFirstCase = (
-  scene: THREE.Object3D,
-  nodes: Record<string, THREE.Object3D>,
-): THREE.Object3D => {
-  const direct =
-    nodes.CD_CASE001_6 ??
-    nodes["CD_CASE.001_6"] ??
-    findNode(scene, "CD_CASE001_6") ??
-    findNode(scene, "CD_CASE.001_6");
+// Quadrilatero con UV; i vertici vanno in senso antiorario visti dal lato visibile.
+type Quad = [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3];
 
-  if (direct) return direct;
-
-  const candidates: THREE.Object3D[] = [];
-  scene.traverse((object) => {
-    const name = normalizeName(object.name);
-    if (/^cdcase\d{3}\d+$/.test(name)) candidates.push(object);
-  });
-
-  candidates.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { numeric: true }),
+function quad(corners: Quad, [u0, u1]: [number, number] = [0, 1]) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(
+      corners.flatMap((p) => [p.x, p.y, p.z]),
+      3,
+    ),
   );
-
-  if (candidates[0]) return candidates[0];
-
-  throw new Error(
-    `Nessuna custodia trovata in ${MODEL_URL}. ` +
-      `Nodi disponibili: ${Object.keys(nodes).slice(0, 30).join(", ")}`,
+  g.setAttribute(
+    "uv",
+    new THREE.Float32BufferAttribute([u0, 0, u1, 0, u1, 1, u0, 1], 2),
   );
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  g.computeVertexNormals();
+  return g;
+}
+
+const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+const printMaterial = (map: THREE.Texture) =>
+  new THREE.MeshBasicMaterial({ map, toneMapped: false });
+
+const configureTexture = (t: THREE.Texture) => {
+  if (t.userData.cdConfigured) return;
+  t.userData.cdConfigured = true;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = THREE.NearestFilter; // le cover sono in dithering
+  t.anisotropy = 4;
+  t.needsUpdate = true;
 };
 
-const makePrintMaterial = (texture: THREE.Texture) =>
-  new THREE.MeshBasicMaterial({
-    map: texture,
-    color: 0xffffff,
-    side: THREE.DoubleSide,
-    toneMapped: false,
-  });
+type Textures = Record<keyof Album["textures"], THREE.Texture>;
 
-const makeDiscMaterial = (texture: THREE.Texture) =>
-  new THREE.MeshStandardMaterial({
-    map: texture,
-    color: 0xffffff,
-    roughness: 0.42,
-    metalness: 0.12,
-    side: THREE.DoubleSide,
-  });
-
-const configureBodyMaterials = (root: THREE.Object3D) => {
-  root.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return;
-
-    object.material = Array.isArray(object.material)
-      ? object.material.map((material) => material.clone())
-      : object.material.clone();
-
-    const materials = Array.isArray(object.material)
-      ? object.material
-      : [object.material];
-
-    materials.forEach((material) => {
-      if (!(material instanceof THREE.MeshStandardMaterial)) return;
-
-      if (material.name === "plastic_black") {
-        material.color.setRGB(0.14, 0.14, 0.14);
-        material.roughness = 0.55;
-        material.metalness = 0;
-      }
-
-      // The exported transparent top is disabled for now. Its original
-      // material produces line artifacts over the cover in the game renderer.
-      if (material.name === "Plastic_transparent") {
-        material.transparent = true;
-        material.opacity = 0;
-        material.depthWrite = false;
-        material.needsUpdate = true;
-      }
-    });
-  });
+type CaseModel = {
+  body: THREE.Group; // base + vassoio + stampe, centrata nell'origine
+  lid: THREE.Group; // pivot sulla cerniera, ruota su Y
+  disc: THREE.Group; // disco centrato, piatto su XZ con l'etichetta verso +Y
+  discHome: [number, number, number]; // centro del disco dentro la custodia
+  dispose: () => void;
 };
 
-type ModelInstance = {
-  root: THREE.Group;
-  lidPivot: THREE.Group;
-  caseDiscGroup: THREE.Object3D;
-  externalDisc: THREE.Group;
-  modelOffset: [number, number, number];
-  discHitPosition: [number, number, number];
-};
+function buildCaseModel(scene: THREE.Object3D, tex: Textures): CaseModel {
+  const caseNode = findMesh(scene, CASE_NODE);
+  scene.updateMatrixWorld(true);
+  const toCase = caseNode.matrixWorld.clone().invert();
 
-function buildModel(
-  scene: THREE.Object3D,
-  nodes: Record<string, THREE.Object3D>,
-  frontTex: THREE.Texture,
-  backTex: THREE.Texture,
-  diskTex: THREE.Texture,
-): ModelInstance {
-  const sourceCase = findFirstCase(scene, nodes);
-  const caseClone = sourceCase.clone(true);
-  configureBodyMaterials(caseClone);
+  // Geometria del nodo espressa in millimetri della custodia (+ trasformazione extra).
+  const bake = (name: string, extra = new THREE.Matrix4()) => {
+    const mesh = findMesh(caseNode, name) as THREE.Mesh;
+    const m = extra.clone().multiply(toCase).multiply(mesh.matrixWorld);
+    return { mesh, geometry: mesh.geometry.clone().applyMatrix4(m) };
+  };
 
-  // Keep the GLB's own CD_CASE transform. We put the clone in a neutral
-  // wrapper so all measurements below are expressed in the same model space
-  // used by the wrapper (after the GLB's original scale/translation).
-  const root = new THREE.Group();
-  root.name = "__CD_MODEL_ROOT__";
-  root.add(caseClone);
-  root.updateMatrixWorld(true);
+  // Riporta il coperchio in posizione chiusa.
+  const closeLid = new THREE.Matrix4()
+    .makeTranslation(HINGE_MM.x, HINGE_MM.y, 0)
+    .multiply(new THREE.Matrix4().makeRotationZ(-GLB_LID_ANGLE))
+    .multiply(new THREE.Matrix4().makeTranslation(-HINGE_MM.x, -HINGE_MM.y, 0));
 
-  const frontSource = findNode(caseClone, "Object_10") as THREE.Mesh | null;
-  const backMesh = findNode(caseClone, "Object_8") as THREE.Mesh | null;
-  const discMesh = findNode(caseClone, "Object_5") as THREE.Mesh | null;
-  const discSurface = findNode(caseClone, "Object_6");
-  const topMesh = findNode(caseClone, "Object_16");
-  const bodyInner = findNode(caseClone, "Object_12");
-  const bodyOuter = findNode(caseClone, "Object_14");
+  const tray = bake(NODES.tray);
+  const shell = bake(NODES.shell);
+  const lid = bake(NODES.lid, closeLid);
+  const front = bake(NODES.front, closeLid);
+  const back = bake(NODES.back);
+  const label = bake(NODES.label);
+  const under = bake(NODES.under);
 
-  if (!frontSource || !backMesh || !discMesh || !bodyInner || !bodyOuter) {
-    throw new Error(
-      `Struttura custodia incompleta in ${MODEL_URL}: ` +
-        `front=${!!frontSource} back=${!!backMesh} disc=${!!discMesh} ` +
-        `inner=${!!bodyInner} outer=${!!bodyOuter}`,
+  const boxOf = (g: THREE.BufferGeometry) => {
+    g.computeBoundingBox();
+    return g.boundingBox!.clone();
+  };
+  const center = boxOf(tray.geometry)
+    .union(boxOf(shell.geometry))
+    .union(boxOf(lid.geometry))
+    .getCenter(new THREE.Vector3());
+
+  // mm della custodia -> scena: fronte verso +Z (camera), alto verso +Y.
+  const toScene = new THREE.Matrix4()
+    .makeScale(MM, MM, MM)
+    .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
+    .multiply(
+      new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z),
     );
+  [tray, shell, lid, front, back].forEach((p) =>
+    p.geometry.applyMatrix4(toScene),
+  );
+
+  const disposables: { dispose: () => void }[] = [];
+  const track = <T extends { dispose: () => void }>(x: T) => {
+    disposables.push(x);
+    return x;
+  };
+  const meshOf = (g: THREE.BufferGeometry, m: THREE.Material) =>
+    new THREE.Mesh(track(g), track(m));
+
+  const black = track(
+    new THREE.MeshStandardMaterial({ color: 0x242424, roughness: 0.55 }),
+  );
+  const plastic = track(
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.12,
+      roughness: 0.05,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  const clear = (g: THREE.BufferGeometry) => {
+    const m = new THREE.Mesh(track(g), plastic);
+    m.raycast = NO_RAYCAST; // i click passano alle stampe e al disco
+    m.renderOrder = 1;
+    return m;
+  };
+
+  // --- Corpo: vassoio, base trasparente, inlay posteriore e interno.
+  const body = new THREE.Group();
+  body.add(new THREE.Mesh(track(tray.geometry), black));
+  body.add(clear(shell.geometry));
+
+  const bb = boxOf(back.geometry);
+  const zb = bb.min.z - 0.002; // appena dietro il vassoio
+  const zs = bb.max.z;
+  const backTex = printMaterial(tex.back);
+  // Retro visto da dietro: la sinistra dell'immagine sta su +X.
+  body.add(
+    meshOf(
+      quad(
+        [
+          v3(bb.max.x, bb.min.y, zb),
+          v3(bb.min.x, bb.min.y, zb),
+          v3(bb.min.x, bb.max.y, zb),
+          v3(bb.max.x, bb.max.y, zb),
+        ],
+        [SPINE_U, 1 - SPINE_U],
+      ),
+      backTex,
+    ),
+    meshOf(
+      quad(
+        [
+          v3(bb.min.x, bb.min.y, zb),
+          v3(bb.min.x, bb.min.y, zs),
+          v3(bb.min.x, bb.max.y, zs),
+          v3(bb.min.x, bb.max.y, zb),
+        ],
+        [1 - SPINE_U, 1],
+      ),
+      backTex,
+    ),
+    meshOf(
+      quad(
+        [
+          v3(bb.max.x, bb.min.y, zs),
+          v3(bb.max.x, bb.min.y, zb),
+          v3(bb.max.x, bb.max.y, zb),
+          v3(bb.max.x, bb.max.y, zs),
+        ],
+        [0, SPINE_U],
+      ),
+      backTex,
+    ),
+  );
+
+  const zi = (TRAY_FLOOR_MM - center.y) * MM;
+  body.add(
+    meshOf(
+      quad([
+        v3(bb.min.x, bb.min.y, zi),
+        v3(bb.max.x, bb.min.y, zi),
+        v3(bb.max.x, bb.max.y, zi),
+        v3(bb.min.x, bb.max.y, zi),
+      ]),
+      printMaterial(tex.inside),
+    ),
+  );
+
+  // --- Coperchio: tutto in coordinate relative alla cerniera.
+  const hinge = new THREE.Vector3(HINGE_MM.x, HINGE_MM.y, center.z)
+    .applyMatrix4(toScene)
+    .setY(0);
+  const lidGroup = new THREE.Group();
+  lidGroup.position.copy(hinge);
+  const fb = boxOf(front.geometry).translate(hinge.clone().negate());
+  const zf = fb.max.z;
+  lidGroup.add(
+    clear(lid.geometry.translate(-hinge.x, -hinge.y, -hinge.z)),
+    meshOf(
+      quad([
+        v3(fb.min.x, fb.min.y, zf),
+        v3(fb.max.x, fb.min.y, zf),
+        v3(fb.max.x, fb.max.y, zf),
+        v3(fb.min.x, fb.max.y, zf),
+      ]),
+      printMaterial(tex.front),
+    ),
+    // retro del booklet, visibile a custodia aperta
+    meshOf(
+      quad([
+        v3(fb.max.x, fb.min.y, zf - 0.002),
+        v3(fb.min.x, fb.min.y, zf - 0.002),
+        v3(fb.min.x, fb.max.y, zf - 0.002),
+        v3(fb.max.x, fb.max.y, zf - 0.002),
+      ]),
+      new THREE.MeshStandardMaterial({ color: 0xe9e5dc, roughness: 0.9 }),
+    ),
+  );
+  front.geometry.dispose();
+  back.geometry.dispose();
+
+  // --- Disco: assi della custodia (etichetta verso +Y), centrato e in scala.
+  const lb = boxOf(label.geometry);
+  const discCenter = lb.getCenter(new THREE.Vector3());
+  const radius = Math.max(lb.max.x - lb.min.x, lb.max.z - lb.min.z) / 2;
+  const toDisc = new THREE.Matrix4()
+    .makeScale(MM, MM, MM)
+    .multiply(
+      new THREE.Matrix4().makeTranslation(
+        -discCenter.x,
+        -discCenter.y,
+        -discCenter.z,
+      ),
+    );
+  label.geometry.applyMatrix4(toDisc);
+  under.geometry.applyMatrix4(toDisc);
+
+  // Le UV originali puntano a un atlas: proiezione planare dall'alto.
+  const pos = label.geometry.getAttribute("position");
+  const uv = new Float32Array(pos.count * 2);
+  const r = radius * MM;
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = 0.5 + pos.getX(i) / (2 * r);
+    uv[i * 2 + 1] = 0.5 - pos.getZ(i) / (2 * r);
   }
+  label.geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 
-  // Do not render the original front plane: its exported transform is -60°.
-  // We rebuild only that printed surface with a deterministic hinge below.
-  frontSource.visible = false;
-  if (discSurface) discSurface.visible = false;
-  if (topMesh) topMesh.visible = false;
-
-  // Back insert keeps the real GLB geometry; only its album artwork changes.
-  backMesh.material = makePrintMaterial(backTex);
-  backMesh.castShadow = false;
-  backMesh.receiveShadow = false;
-
-  // Body bounds in ROOT MODEL SPACE (same coordinates as the new lid pivot).
-  root.updateMatrixWorld(true);
-  const bodyBox = new THREE.Box3();
-  bodyBox.expandByObject(bodyOuter);
-  bodyBox.expandByObject(bodyInner);
-  bodyBox.expandByObject(backMesh);
-
-  const bodySize = bodyBox.getSize(new THREE.Vector3());
-  const bodyCenter = bodyBox.getCenter(new THREE.Vector3());
-
-  // Object_10 is a clean rectangular plane in its local YZ plane.
-  frontSource.geometry.computeBoundingBox();
-  const frontBounds = frontSource.geometry.boundingBox;
-  if (!frontBounds) throw new Error("Bounding box cover front non disponibile");
-
-  const frontSize = frontBounds.getSize(new THREE.Vector3());
-  const frontCenter = frontBounds.getCenter(new THREE.Vector3());
-  const frontGeometry = frontSource.geometry.clone();
-  frontGeometry.translate(-frontCenter.x, -frontCenter.y, -frontCenter.z);
-
-  // GLB local Y is the thickness direction. With MODEL_ROT_X = -90°,
-  // the visible side for the camera is the -Y face, so the front print sits
-  // just in front of bodyBox.min.y.
-  const hingeX = bodyBox.min.x;
-  const frontY = bodyBox.min.y - 0.0010;
-  const hingeZ = bodyCenter.z;
-
-  const lidPivot = new THREE.Group();
-  lidPivot.name = "__CD_LEFT_HINGE__";
-  lidPivot.position.set(hingeX, frontY, hingeZ);
-  root.add(lidPivot);
-
-  const frontMesh = new THREE.Mesh(
-    frontGeometry,
-    makePrintMaterial(frontTex),
-  );
-  frontMesh.name = "__CD_FRONT_PRINT__";
-  frontMesh.castShadow = false;
-  frontMesh.receiveShadow = false;
-  frontMesh.frustumCulled = false;
-
-  // Local +X (plane normal) -> GLB -Y, which becomes camera-facing +Z
-  // after the model's -90° X rotation. Local +Y -> model +X, i.e. left->right.
-  frontMesh.rotation.z = -Math.PI / 2;
-
-  // Fit the real front rectangle inside the jewel-case body with a small
-  // border. Width is the mesh's LOCAL Y axis, height is LOCAL Z.
-  const targetFrontWidth = Math.max(bodySize.x - 0.006, 0.001);
-  const targetFrontHeight = Math.max(bodySize.z - 0.006, 0.001);
-  const widthScale = targetFrontWidth / Math.max(frontSize.y, 1e-6);
-  const heightScale = targetFrontHeight / Math.max(frontSize.z, 1e-6);
-
-  frontMesh.scale.set(1, widthScale, heightScale);
-  frontMesh.position.set(targetFrontWidth * 0.5, 0, 0);
-  lidPivot.add(frontMesh);
-
-  // Start closed. The animation below moves from 0° -> +120° around the
-  // vertical left hinge, which makes the right side swing toward the left.
-  lidPivot.rotation.z = 0;
-
-  // IMPORTANT: Object_5 is the actual 3D CD. Object_6 is only its secondary
-  // flat surface and must stay hidden or the two surfaces z-fight.
-  discMesh.material = makeDiscMaterial(diskTex);
-  discMesh.visible = true;
-
-  const discGroup = discMesh.parent ?? discMesh;
-  root.updateMatrixWorld(true);
-
-  discMesh.geometry.computeBoundingBox();
-  const discBounds = discMesh.geometry.boundingBox;
-  if (!discBounds) throw new Error("Bounding box del disco non disponibile");
-
-  const discCenterLocal = discBounds.getCenter(new THREE.Vector3());
-  const discSize = discBounds.getSize(new THREE.Vector3());
-  const discDiameter = Math.max(discSize.x, discSize.z);
-
-  const externalDisc = new THREE.Group();
-  externalDisc.name = "__CD_EXTERNAL_DISC__";
-
-  const externalDiscMesh = discMesh.clone(false);
-  externalDiscMesh.geometry = discMesh.geometry.clone();
-  externalDiscMesh.geometry.translate(
-    -discCenterLocal.x,
-    -discCenterLocal.y,
-    -discCenterLocal.z,
-  );
-  externalDiscMesh.material = makeDiscMaterial(diskTex);
-  externalDiscMesh.frustumCulled = false;
-  externalDisc.add(externalDiscMesh);
-
-  externalDisc.scale.setScalar(
-    GAME_DISC_DIAMETER / Math.max(discDiameter, 1e-6),
+  const disc = new THREE.Group();
+  disc.add(
+    meshOf(
+      label.geometry,
+      new THREE.MeshStandardMaterial({
+        map: tex.disk,
+        roughness: 0.4,
+        metalness: 0.1,
+      }),
+    ),
+    meshOf(
+      under.geometry,
+      new THREE.MeshStandardMaterial({
+        color: 0xd4d8de,
+        roughness: 0.25,
+        metalness: 0.5,
+      }),
+    ),
+    // Hitbox invisibile: il mozzo del vassoio sporge dal foro e ruberebbe i click
+    meshOf(
+      new THREE.CylinderGeometry(r, r, 0.08, 32).translate(0, 0.02, 0),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    ),
   );
 
-  // All positions are in root/model space here.
-  const discWorld = discMesh.getWorldPosition(new THREE.Vector3());
-  const discOffset = discWorld.sub(bodyCenter);
-
-  const modelOffsetVector = bodyCenter
-    .clone()
-    .applyEuler(new THREE.Euler(MODEL_ROT_X, 0, 0))
-    .multiplyScalar(MODEL_SCALE);
+  const home = discCenter.applyMatrix4(toScene);
 
   return {
-    root,
-    lidPivot,
-    caseDiscGroup: discGroup,
-    externalDisc,
-    modelOffset: [
-      -modelOffsetVector.x,
-      -modelOffsetVector.y,
-      -modelOffsetVector.z,
-    ],
-    discHitPosition: [
-      discOffset.x * MODEL_SCALE,
-      discOffset.y * MODEL_SCALE,
-      discOffset.z * MODEL_SCALE,
-    ],
+    body,
+    lid: lidGroup,
+    disc,
+    discHome: [home.x, home.y, home.z],
+    dispose: () => disposables.forEach((d) => d.dispose()),
   };
 }
 
 export function CDCase({ album }: { album: Album }) {
-  const NO_RAYCAST = () => {};
-  const DEFAULT_RAYCAST = THREE.Mesh.prototype.raycast;
   const s = useGameState();
   const dispatch = useGameDispatch();
   const [isOpen, setIsOpen] = useState(false);
 
-  // For this pass we intentionally ignore `inside` and only map front/back/disk.
-  const { front, back, disk } = album.textures;
-  const [frontTex, backTex, diskTex] = useTexture([front, back, disk]);
+  const tex = useTexture(album.textures);
+  const { scene } = useGLTF(MODEL_URL);
 
-  [frontTex, backTex, diskTex].forEach((texture) => {
-    texture.magFilter = THREE.LinearFilter;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.anisotropy = 4;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.flipY = false;
-    texture.needsUpdate = true;
-  });
-
-  const gltf = useGLTF(MODEL_URL) as unknown as {
-    scene: THREE.Object3D;
-    nodes: Record<string, THREE.Object3D>;
-  };
-
-  const model = useMemo(
-    () => buildModel(gltf.scene, gltf.nodes, frontTex, backTex, diskTex),
-    [gltf.scene, gltf.nodes, frontTex, backTex, diskTex],
-  );
+  const model = useMemo(() => {
+    Object.values(tex).forEach(configureTexture);
+    return buildCaseModel(scene, tex);
+  }, [scene, tex]);
+  useEffect(() => () => model.dispose(), [model]);
 
   const place = placeOf(s, album.id);
   const held = place === "hand";
   const rotatable = s.view === "case" && !held;
+  const passive = place === "tray" || place === "loaded"; // ci pensa la hitbox del vassoio
 
   const caseRef = useRef<THREE.Group>(null);
   const pivotRef = useRef<THREE.Group>(null);
@@ -336,24 +361,20 @@ export function CDCase({ album }: { album: Album }) {
   const dragging = useRef(false);
   const rotatableRef = useRef(rotatable);
   rotatableRef.current = rotatable;
-
   const openRef = useRef(isOpen);
   openRef.current = isOpen;
 
   useEffect(() => {
     const move = (ev: PointerEvent) => {
       if (!dragging.current || !rotatableRef.current) return;
-
       const next = targetY.current + ev.movementX * 0.01;
       targetY.current = openRef.current
         ? THREE.MathUtils.clamp(next, OPEN_ROT_MIN, OPEN_ROT_MAX)
         : next;
     };
-
     const up = () => {
       dragging.current = false;
     };
-
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     return () => {
@@ -362,39 +383,54 @@ export function CDCase({ album }: { album: Album }) {
     };
   }, []);
 
+  // Presa del disco: elimino i giri completi, la custodia torna a 0 per la via più breve
   useEffect(() => {
     if (!held) return;
-
-    if (caseRef.current) {
+    if (caseRef.current)
       caseRef.current.rotation.y = wrapAngle(caseRef.current.rotation.y);
-    }
     targetY.current = wrapAngle(targetY.current);
   }, [held]);
 
-  useFrame((_, dt) => {
-    const c = caseRef.current;
-    const p = pivotRef.current;
-    if (!c) return;
+  // Apertura: riporto l'angolo nel range consentito
+  useEffect(() => {
+    if (!isOpen) return;
+    if (caseRef.current)
+      caseRef.current.rotation.y = wrapAngle(caseRef.current.rotation.y);
+    targetY.current = THREE.MathUtils.clamp(
+      wrapAngle(targetY.current),
+      OPEN_ROT_MIN,
+      OPEN_ROT_MAX,
+    );
+  }, [isOpen]);
 
+  // Il disco sul vassoio/caricato non deve intercettare i click
+  useEffect(() => {
+    model.disc.traverse((o) => {
+      if (o instanceof THREE.Mesh)
+        o.raycast = passive ? NO_RAYCAST : THREE.Mesh.prototype.raycast;
+    });
+  }, [model, passive]);
+
+  useFrame((_, dt) => {
+    const c = caseRef.current,
+      p = pivotRef.current;
+    if (!c) return;
     if (held) targetY.current = 0;
     c.rotation.y = THREE.MathUtils.damp(c.rotation.y, targetY.current, 8, dt);
-
-    if (p) {
+    if (p)
       p.rotation.y =
         place === "case"
           ? c.rotation.y
           : THREE.MathUtils.damp(p.rotation.y, 0, 8, dt);
-    }
-
-    const targetLid = isOpen ? LID_OPEN_ANGLE : 0;
-    model.lidPivot.rotation.z = THREE.MathUtils.damp(
-      model.lidPivot.rotation.z,
-      targetLid,
-      10,
+    model.lid.rotation.y = THREE.MathUtils.damp(
+      model.lid.rotation.y,
+      isOpen ? -LID_OPEN_ANGLE : 0,
+      8,
       dt,
     );
   });
 
+  const [hx, hy, hz] = model.discHome;
   const pose =
     place === "hand"
       ? s.view === "stereo"
@@ -404,41 +440,30 @@ export function CDCase({ album }: { album: Album }) {
         ? POSE.tray
         : place === "loaded"
           ? POSE.loaded
-          : {
-              x: 0.1,
-              y: 0,
-              z: isOpen ? 0.2 : 0.03,
-              s: 1,
-              tilt: Math.PI / 2,
-            };
-
+          : { x: hx, y: hy, z: hz, s: 1, tilt: Math.PI / 2 };
   const disc = useSpring({ ...pose, config: SPRING });
-  const passive = place === "tray" || place === "loaded";
 
   const onDiscClick = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 2) return;
     e.stopPropagation();
-
     if (place === "case") {
-      if (s.view === "case" && isOpen) {
+      if (s.view === "case" && isOpen)
         dispatch({
           type: "GRAB",
           albumId: album.id,
           trackCount: album.tracks.length,
         });
-      }
     } else if (place === "hand") {
       if (s.view === "case") {
         if (isOpen) dispatch({ type: "RETURN" });
-      } else {
-        dispatch({ type: "PUT_ON_TRAY" });
-      }
+      } else dispatch({ type: "PUT_ON_TRAY" });
     }
   };
 
-  useEffect(() => {
-    model.caseDiscGroup.visible = place === "case";
-  }, [model, place]);
+  const pointer = {
+    onPointerOver: () => (document.body.style.cursor = "pointer"),
+    onPointerOut: () => (document.body.style.cursor = "auto"),
+  };
 
   return (
     <>
@@ -451,49 +476,32 @@ export function CDCase({ album }: { album: Album }) {
         onClick={(e) => {
           if (e.delta > 2) return;
           e.stopPropagation();
-          setIsOpen((open) => !open);
+          setIsOpen((o) => !o);
         }}
-        onPointerOver={() => (document.body.style.cursor = "pointer")}
-        onPointerOut={() => (document.body.style.cursor = "auto")}
+        {...pointer}
       >
-        <group
-          position={model.modelOffset}
-          rotation-x={MODEL_ROT_X}
-          scale={MODEL_SCALE}
-          frustumCulled={false}
-        >
-          <primitive object={model.root} dispose={null} />
-        </group>
-
-        <mesh
-          visible={place === "case"}
-          position={model.discHitPosition}
-          rotation-x={Math.PI / 2}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={onDiscClick}
-        >
-          <cylinderGeometry args={[1.2, 1.2, 0.06, 32]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
+        <primitive object={model.body} />
+        <primitive object={model.lid} />
       </group>
 
       <group ref={pivotRef}>
         <a.group
-          visible={place !== "case"}
-          frustumCulled={false}
           position-x={disc.x}
           position-y={disc.y}
           position-z={disc.z}
           scale={disc.s}
           rotation-x={disc.tilt}
-          raycast={passive ? NO_RAYCAST : DEFAULT_RAYCAST}
           onPointerDown={(e) => {
-            if (place !== "hand") return;
-            if (s.view === "case") e.stopPropagation();
+            if (place === "case") {
+              e.stopPropagation();
+              dragging.current = true;
+            } else if (place === "hand" && s.view === "case")
+              e.stopPropagation();
           }}
           onClick={onDiscClick}
+          {...(passive ? {} : pointer)}
         >
-          <primitive object={model.externalDisc} dispose={null} />
+          <primitive object={model.disc} />
         </a.group>
       </group>
     </>

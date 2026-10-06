@@ -10,10 +10,11 @@ export function useAudioSync(albums: Map<string, Album>) {
   const src = loaded && s.disc ? albums.get(s.disc.albumId)?.tracks[s.track]?.src ?? null : null
 
   useEffect(() => {
-    if (!audio) return
+    const el = audio
+    if (!el) return
     const onEnd = () => dispatch({ type: 'TRACK_ENDED' })
-    audio.addEventListener('ended', onEnd)
-    return () => audio.removeEventListener('ended', onEnd)
+    el.addEventListener('ended', onEnd)
+    return () => el.removeEventListener('ended', onEnd)
   }, [dispatch])
 
   useEffect(() => {
