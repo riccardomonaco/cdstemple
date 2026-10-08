@@ -30,10 +30,10 @@
     "title": "Test A",
     "artist": "",
     "textures": {
-      "front": "/covers/howhigh/frontd.png",
-      "back": "/covers/howhigh/backd.png",
-      "disk": "/covers/howhigh/diskd.png",
-      "inside": "/covers/howhigh/insided.png"
+      "front": "/covers/howhigh/front.jpg",
+      "back": "/covers/howhigh/back.jpg",
+      "disk": "/covers/howhigh/disk.jpg",
+      "inside": "/covers/howhigh/inside.jpg"
     },
     "tracks": [
       { "title": "Uno", "src": "/audio/howhigh/01.m4a" },
@@ -45,10 +45,10 @@
     "title": "Test B",
     "artist": "",
     "textures": {
-      "front": "/covers/howhigh/frontd.png",
-      "back": "/covers/howhigh/backd.png",
-      "disk": "/covers/howhigh/diskd.png",
-      "inside": "/covers/howhigh/insided.png"
+      "front": "/covers/neffaeimessaggeridelladopa/front.jpg",
+      "back": "/covers/neffaeimessaggeridelladopa/back.jpg",
+      "disk": "/covers/neffaeimessaggeridelladopa/disk.jpg",
+      "inside": "/covers/howhigh/inside.jpg"
     },
     "tracks": [
       { "title": "Tre", "src": "/audio/howhigh/03.m4a" },
@@ -60,10 +60,10 @@
     "title": "Test C",
     "artist": "",
     "textures": {
-      "front": "/covers/howhigh/frontd.png",
-      "back": "/covers/howhigh/backd.png",
-      "disk": "/covers/howhigh/diskd.png",
-      "inside": "/covers/howhigh/insided.png"
+      "front": "/covers/howhigh/front.jpg",
+      "back": "/covers/howhigh/back.jpg",
+      "disk": "/covers/howhigh/disk.jpg",
+      "inside": "/covers/howhigh/inside.jpg"
     },
     "tracks": [{ "title": "Cinque", "src": "/audio/howhigh/05.m4a" }]
   }
