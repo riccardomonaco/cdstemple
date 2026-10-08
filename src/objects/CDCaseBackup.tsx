@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+/* import { useEffect, useRef, useState } from "react";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
 import { useSpring, a } from "@react-spring/three";
@@ -194,3 +194,4 @@ export function CDCase({ album }: { album: Album }) {
     </>
   );
 }
+ */
