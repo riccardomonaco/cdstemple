@@ -1,82 +1,38 @@
-import React from "react";
-import { CDCase } from "./CDCase";
-import type { Album } from "../data/schema";
+import { CDCase } from './CDCase'
+import { RACK, slotPose } from '../config/rack'
+import type { Album } from '../data/schema'
 
-interface CDRackProps {
-  albums: Album[];
-  position?: [number, number, number];
-  capacity?: number;
-}
+const WOOD = '#5c4033'
 
-export function CDRack({ 
-  albums, 
-  position = [-3.8, -0.6, 0.5], // Posizionato a sinistra sulla scrivania
-  capacity = 12 
-}: CDRackProps) {
-  const [startX, startY, startZ] = position;
-
-  // Dimensioni calcolate in base al GLB del tuo CD
-  const cdSpacing = 0.32; // Spazio verticale tra uno slot e l'altro
-  const rackWidth = 3.1;
-  const rackDepth = 2.5;
-  const rackHeight = capacity * cdSpacing + 0.4; // 0.2 di padding sopra e sotto
+export function CDRack({ albums }: { albums: Album[] }) {
+  const { pos, scale, capacity, pitch, width: W, depth: D } = RACK
+  const H = 0.2 + pitch * capacity
 
   return (
     <>
-      {/* 1. STRUTTURA FISICA DEL MOBILE (Legno e Plastica scura) */}
-      <group position={[startX, startY + rackHeight / 2 - 0.2, startZ]}>
-        
-        {/* Pannello Sinistro (Legno) */}
-        <mesh position={[-rackWidth / 2 + 0.05, 0, 0]}>
-          <boxGeometry args={[0.1, rackHeight, rackDepth]} />
-          <meshStandardMaterial color="#5c4033" roughness={0.9} />
+      {/* Mobile: origine locale = centro della base, sulla scrivania */}
+      <group position={pos} scale={scale}>
+        <mesh position={[0, 0.05, 0]}><boxGeometry args={[W, 0.1, D]} /><meshStandardMaterial color={WOOD} roughness={0.9} /></mesh>
+        <mesh position={[0, H - 0.05, 0]}><boxGeometry args={[W, 0.1, D]} /><meshStandardMaterial color={WOOD} roughness={0.9} /></mesh>
+        {[-1, 1].map((sx) => (
+          <mesh key={sx} position={[sx * (W / 2 - 0.05), H / 2, 0]}>
+            <boxGeometry args={[0.1, H, D]} /><meshStandardMaterial color={WOOD} roughness={0.9} />
+          </mesh>
+        ))}
+        <mesh position={[0, H / 2, -D / 2 + 0.05]}>
+          <boxGeometry args={[W - 0.2, H - 0.2, 0.1]} /><meshStandardMaterial color="#111" roughness={0.7} />
         </mesh>
-        
-        {/* Pannello Destro (Legno) */}
-        <mesh position={[rackWidth / 2 - 0.05, 0, 0]}>
-          <boxGeometry args={[0.1, rackHeight, rackDepth]} />
-          <meshStandardMaterial color="#5c4033" roughness={0.9} />
-        </mesh>
-        
-        {/* Pannello Superiore (Legno) */}
-        <mesh position={[0, rackHeight / 2 - 0.05, 0]}>
-          <boxGeometry args={[rackWidth, 0.1, rackDepth]} />
-          <meshStandardMaterial color="#5c4033" roughness={0.9} />
-        </mesh>
-        
-        {/* Pannello Inferiore / Base (Legno) */}
-        <mesh position={[0, -rackHeight / 2 + 0.05, 0]}>
-          <boxGeometry args={[rackWidth, 0.1, rackDepth]} />
-          <meshStandardMaterial color="#5c4033" roughness={0.9} />
-        </mesh>
-
-        {/* Schienale (Plastica scura) */}
-        <mesh position={[0, 0, -rackDepth / 2 + 0.05]}>
-          <boxGeometry args={[rackWidth - 0.2, rackHeight - 0.2, 0.1]} />
-          <meshStandardMaterial color="#111111" roughness={0.7} />
-        </mesh>
-
-        {/* Ripiani / Slot divisori (Plastica scura) */}
         {Array.from({ length: capacity - 1 }).map((_, i) => (
-          <mesh key={`shelf-${i}`} position={[0, -rackHeight / 2 + 0.2 + (i + 1) * cdSpacing, 0]}>
-            <boxGeometry args={[rackWidth - 0.2, 0.02, rackDepth - 0.1]} />
-            <meshStandardMaterial color="#1a1a1a" roughness={0.6} />
+          <mesh key={i} position={[0, 0.1 + pitch * (i + 1), 0]}>
+            <boxGeometry args={[W - 0.2, 0.02, D - 0.1]} /><meshStandardMaterial color="#1a1a1a" roughness={0.6} />
           </mesh>
         ))}
       </group>
 
-      {/* 2. CD RENDERIZZATI ALL'INTERNO DEGLI SLOT */}
-      {albums.map((album, index) => {
-        // Calcoliamo la posizione *assoluta* per non sfalsare le molle di useSpring
-        const homePose = {
-          x: startX,
-          y: startY + index * cdSpacing + 0.16, // +0.16 centra il CD nello slot\
-          z: startZ + 0.05, // Sporge leggermente in avanti
-          tilt: Math.PI / 2,
-        };
-
-        return <CDCase key={album.id} album={album} homePose={homePose} />;
-      })}
+      {/* Custodie: posa assoluta, calcolata da slotPose */}
+      {albums.slice(0, capacity).map((album, i) => (
+        <CDCase key={album.id} album={album} slot={slotPose(i)} />
+      ))}
     </>
-  );
+  )
 }

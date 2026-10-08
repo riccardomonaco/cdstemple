@@ -13,6 +13,13 @@ import {
 import { useGameState, useGameDispatch } from "../state/store";
 import { placeOf } from "../state/selectors";
 import type { Album } from "../data/schema";
+import type { RackSlot } from "../config/rack";
+
+// Posa a riposo nel rack: custodia sdraiata, copertina in alto, coste (lato cerniera) verso la camera
+const RACK_Q = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(-Math.PI / 2, Math.PI / 2, 0, "YXZ"),
+);
+const IDENTITY_Q = new THREE.Quaternion();
 
 const MODEL_URL = "/models/cd_music_02.glb";
 
@@ -336,7 +343,7 @@ function buildCaseModel(scene: THREE.Object3D, tex: Textures): CaseModel {
   };
 }
 
-export function CDCase({ album, homePose }: { album: Album; homePose: { x: number; y: number; z: number; tilt: number } }) {
+export function CDCase({ album, slot }: { album: Album; slot: RackSlot }) {
   const s = useGameState();
   const dispatch = useGameDispatch();
   const [isOpen, setIsOpen] = useState(false);
@@ -352,7 +359,8 @@ export function CDCase({ album, homePose }: { album: Album; homePose: { x: numbe
 
   const place = placeOf(s, album.id);
   const held = place === "hand";
-  const rotatable = s.view === "case" && !held;
+  const selected = s.selectedId === album.id;
+  const rotatable = s.view === "case" && !held && selected;
   const passive = place === "tray" || place === "loaded"; // ci pensa la hitbox del vassoio
 
   const caseRef = useRef<THREE.Group>(null);
@@ -363,6 +371,15 @@ export function CDCase({ album, homePose }: { album: Album; homePose: { x: numbe
   rotatableRef.current = rotatable;
   const openRef = useRef(isOpen);
   openRef.current = isOpen;
+
+  const mountRef = useRef<THREE.Group>(null); // posa della custodia (rack <-> centro)
+  const discMountRef = useRef<THREE.Group>(null); // il disco la segue solo finché è nella custodia
+  const lift = useRef(selected ? 1 : 0);
+  const hover = useRef({ target: 0, value: 0 });
+
+  useEffect(() => {
+    if (!selected) setIsOpen(false);
+  }, [selected]);
 
   useEffect(() => {
     const move = (ev: PointerEvent) => {
@@ -430,6 +447,39 @@ export function CDCase({ album, homePose }: { album: Album; homePose: { x: numbe
     );
   });
 
+  useFrame((_, dt) => {
+    const m = mountRef.current,
+      d = discMountRef.current;
+    if (!m || !d) return;
+    const goal = selected ? 1 : 0;
+    lift.current = THREE.MathUtils.damp(lift.current, goal, 6, dt);
+    if (Math.abs(lift.current - goal) < 0.001) lift.current = goal;
+    const h = hover.current;
+    h.value = THREE.MathUtils.damp(h.value, selected ? 0 : h.target, 14, dt);
+
+    const t = lift.current,
+      arc = Math.sin(Math.PI * t),
+      L = THREE.MathUtils.lerp;
+    m.position.set(
+      L(slot.position[0], 0, t),
+      L(slot.position[1], 0, t) + arc * 0.4,
+      L(slot.position[2] + h.value * slot.hover, 0, t) + arc * 1.2, // esce in avanti prima di salire
+    );
+    m.quaternion.slerpQuaternions(RACK_Q, IDENTITY_Q, t);
+    m.scale.setScalar(L(slot.scale, 1, t));
+
+    if (place === "case") {
+      d.position.copy(m.position);
+      d.quaternion.copy(m.quaternion);
+      d.scale.copy(m.scale);
+    } else {
+      // in mano / vassoio / stereo: coordinate mondo
+      d.position.set(0, 0, 0);
+      d.quaternion.identity();
+      d.scale.set(1, 1, 1);
+    }
+  });
+
   const [hx, hy, hz] = model.discHome;
   const pose =
     place === "hand"
@@ -447,6 +497,10 @@ export function CDCase({ album, homePose }: { album: Album; homePose: { x: numbe
     if (e.delta > 2) return;
     e.stopPropagation();
     if (place === "case") {
+      if (!selected) {
+        dispatch({ type: "SELECT_ALBUM", albumId: album.id });
+        return;
+      }
       if (s.view === "case" && isOpen)
         dispatch({
           type: "GRAB",
@@ -461,48 +515,62 @@ export function CDCase({ album, homePose }: { album: Album; homePose: { x: numbe
   };
 
   const pointer = {
-    onPointerOver: () => (document.body.style.cursor = "pointer"),
-    onPointerOut: () => (document.body.style.cursor = "auto"),
+    onPointerOver: () => {
+      hover.current.target = 1;
+      document.body.style.cursor = "pointer";
+    },
+    onPointerOut: () => {
+      hover.current.target = 0;
+      document.body.style.cursor = "auto";
+    },
   };
 
   return (
     <>
-      <group
-        ref={caseRef}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          dragging.current = true;
-        }}
-        onClick={(e) => {
-          if (e.delta > 2) return;
-          e.stopPropagation();
-          setIsOpen((o) => !o);
-        }}
-        {...pointer}
-      >
-        <primitive object={model.body} />
-        <primitive object={model.lid} />
+      <group ref={mountRef}>
+        <group
+          ref={caseRef}
+          onPointerDown={(e) => {
+            if (!selected) return;
+            e.stopPropagation();
+            dragging.current = true;
+          }}
+          onClick={(e) => {
+            if (e.delta > 2) return;
+            e.stopPropagation();
+            if (!selected)
+              dispatch({ type: "SELECT_ALBUM", albumId: album.id });
+            else setIsOpen((o) => !o);
+          }}
+          {...pointer}
+        >
+          <primitive object={model.body} />
+          <primitive object={model.lid} />
+        </group>
       </group>
 
-      <group ref={pivotRef}>
-        <a.group
-          position-x={disc.x}
-          position-y={disc.y}
-          position-z={disc.z}
-          scale={disc.s}
-          rotation-x={disc.tilt}
-          onPointerDown={(e) => {
-            if (place === "case") {
-              e.stopPropagation();
-              dragging.current = true;
-            } else if (place === "hand" && s.view === "case")
-              e.stopPropagation();
-          }}
-          onClick={onDiscClick}
-          {...(passive ? {} : pointer)}
-        >
-          <primitive object={model.disc} />
-        </a.group>
+      <group ref={discMountRef}>
+        <group ref={pivotRef}>
+          <a.group
+            position-x={disc.x}
+            position-y={disc.y}
+            position-z={disc.z}
+            scale={disc.s}
+            rotation-x={disc.tilt}
+            onPointerDown={(e) => {
+              if (place === "case") {
+                if (!selected) return;
+                e.stopPropagation();
+                dragging.current = true;
+              } else if (place === "hand" && s.view === "case")
+                e.stopPropagation();
+            }}
+            onClick={onDiscClick}
+            {...(passive ? {} : pointer)}
+          >
+            <primitive object={model.disc} />
+          </a.group>
+        </group>
       </group>
     </>
   );

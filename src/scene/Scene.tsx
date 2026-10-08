@@ -1,37 +1,45 @@
-import { Canvas, useFrame } from '@react-three/fiber'
-import { ContactShadows } from '@react-three/drei'
-import { CAM_Z_DEFAULT, DESK_TOP_Y } from '../config/constants'
-import { useGameState } from '../state/store'
-import { isHeld } from '../state/selectors'
-import { CameraRig } from './CameraRig'
-import { Desk } from './Desk'
-import { CDCase } from '../objects/CDCase'
+import { Canvas, useFrame } from "@react-three/fiber";
+import { ContactShadows } from "@react-three/drei";
+import { CAM_Z_DEFAULT, DESK_TOP_Y } from "../config/constants";
+import { useGameState, useGameDispatch } from "../state/store";
+import { isHeld } from "../state/selectors";
+import { CameraRig } from "./CameraRig";
+import { Desk } from "./Desk";
+import { CDCase } from "../objects/CDCase";
 import { CDRack } from "../objects/CDRack";
-import { Stereo } from '../objects/Stereo'
-import type { Album } from '../data/schema'
+import { Stereo } from "../objects/Stereo";
+import type { Album } from "../data/schema";
 
 function DebugHUD() {
   useFrame((st) => {
-    const el = document.getElementById('debug-panel'); if (!el) return
-    const c = st.camera.position
-    el.innerText = `--- DEBUG R3F ---\nCAMERA : [ ${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)} ]`
-  })
-  return null
+    const el = document.getElementById("debug-panel");
+    if (!el) return;
+    const c = st.camera.position;
+    el.innerText = `--- DEBUG R3F ---\nCAMERA : [ ${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)} ]`;
+  });
+  return null;
 }
 
 export function Scene({ albums }: { albums: Album[] }) {
-  const s = useGameState()
+  const s = useGameState();
+  const dispatch = useGameDispatch();
   return (
-    <Canvas camera={{ position: [0, 0, CAM_Z_DEFAULT], fov: 45 }}>
+    <Canvas camera={{ position: [0, 0, CAM_Z_DEFAULT], fov: 45 }} onPointerMissed={() => dispatch({ type: 'DESELECT' })}>
       <DebugHUD />
       <CameraRig view={s.view} held={isHeld(s)} />
       <ambientLight intensity={1.5} />
       <directionalLight position={[10, 10, 5]} intensity={1.5} />
       <pointLight position={[-10, -10, -10]} intensity={0.5} />
       <Desk />
-      <CDRack albums={albums} position={[-3.8, -0.6, 0.5]}/>
+      <CDRack albums={albums} />
       <Stereo />
-      <ContactShadows position={[0, DESK_TOP_Y + 0.01, 0]} opacity={0.5} scale={10} blur={2} far={4} />
+      <ContactShadows
+        position={[0, DESK_TOP_Y + 0.01, 0]}
+        opacity={0.5}
+        scale={10}
+        blur={2}
+        far={4}
+      />
     </Canvas>
-  )
+  );
 }

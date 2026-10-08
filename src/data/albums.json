@@ -24,5 +24,47 @@
       { "title": "Who Wanna Rap", "src": "/audio/howhigh/09.m4a" },
       { "title": "Fine Line-Saukrates", "src": "/audio/howhigh/10.m4a" }
     ]
+  },
+  {
+    "id": "test-a",
+    "title": "Test A",
+    "artist": "",
+    "textures": {
+      "front": "/covers/howhigh/frontd.png",
+      "back": "/covers/howhigh/backd.png",
+      "disk": "/covers/howhigh/diskd.png",
+      "inside": "/covers/howhigh/insided.png"
+    },
+    "tracks": [
+      { "title": "Uno", "src": "/audio/howhigh/01.m4a" },
+      { "title": "Due", "src": "/audio/howhigh/02.m4a" }
+    ]
+  },
+  {
+    "id": "test-b",
+    "title": "Test B",
+    "artist": "",
+    "textures": {
+      "front": "/covers/howhigh/frontd.png",
+      "back": "/covers/howhigh/backd.png",
+      "disk": "/covers/howhigh/diskd.png",
+      "inside": "/covers/howhigh/insided.png"
+    },
+    "tracks": [
+      { "title": "Tre", "src": "/audio/howhigh/03.m4a" },
+      { "title": "Quattro", "src": "/audio/howhigh/04.m4a" }
+    ]
+  },
+  {
+    "id": "test-c",
+    "title": "Test C",
+    "artist": "",
+    "textures": {
+      "front": "/covers/howhigh/frontd.png",
+      "back": "/covers/howhigh/backd.png",
+      "disk": "/covers/howhigh/diskd.png",
+      "inside": "/covers/howhigh/insided.png"
+    },
+    "tracks": [{ "title": "Cinque", "src": "/audio/howhigh/05.m4a" }]
   }
 ]
