@@ -4,10 +4,10 @@
     "title": "How High (The Soundtrack)",
     "artist": "Various Artists",
     "textures": {
-      "front": "/covers/howhigh/frontd.png",
-      "back": "/covers/howhigh/backd.png",
-      "disk": "/covers/howhigh/diskd.png",
-      "inside": "/covers/howhigh/insided.png"
+      "front": "/covers/howhigh/front.jpg",
+      "back": "/covers/howhigh/back.jpg",
+      "disk": "/covers/howhigh/disk.jpg",
+      "inside": "/covers/howhigh/inside.jpg"
     },
     "tracks": [
       { "title": "Intro (Skit)", "src": "/audio/howhigh/01.m4a" },

@@ -6,6 +6,7 @@ import { isHeld } from '../state/selectors'
 import { CameraRig } from './CameraRig'
 import { Desk } from './Desk'
 import { CDCase } from '../objects/CDCase'
+import { CDRack } from "../objects/CDRack";
 import { Stereo } from '../objects/Stereo'
 import type { Album } from '../data/schema'
 
@@ -28,7 +29,7 @@ export function Scene({ albums }: { albums: Album[] }) {
       <directionalLight position={[10, 10, 5]} intensity={1.5} />
       <pointLight position={[-10, -10, -10]} intensity={0.5} />
       <Desk />
-      {albums.map((al) => <CDCase key={al.id} album={al} />)}
+      <CDRack albums={albums} position={[-3.8, -0.6, 0.5]}/>
       <Stereo />
       <ContactShadows position={[0, DESK_TOP_Y + 0.01, 0]} opacity={0.5} scale={10} blur={2} far={4} />
     </Canvas>

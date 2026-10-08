@@ -336,7 +336,7 @@ function buildCaseModel(scene: THREE.Object3D, tex: Textures): CaseModel {
   };
 }
 
-export function CDCase({ album }: { album: Album }) {
+export function CDCase({ album, homePose }: { album: Album; homePose: { x: number; y: number; z: number; tilt: number } }) {
   const s = useGameState();
   const dispatch = useGameDispatch();
   const [isOpen, setIsOpen] = useState(false);
